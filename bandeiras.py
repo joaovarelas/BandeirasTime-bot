@@ -3,50 +3,90 @@
 import json
 import queue
 import sys
-import slack
 import logging
+from slack import WebClient, RTMClient
 from os import environ
 from time import sleep
 from threading import Thread
 from requests import get
 from datetime import datetime, timedelta
 
-
 class SlackBot:
 
     def __init__( self ):
+        logging.info( "[ + ] Creating SlackBot instance..." )
+        self.channel = "#schedule"
         try:
-            self.slack_client = slack.WebClient( token = environ["SLACK_BOT_TOKEN"] )
+            token = environ["SLACK_BOT_TOKEN"]
+            self.client = WebClient( token = token )
         except:
             logging.error( "[ - ] Error starting slack.WebClient instance" )
             
-        self.channel = "#schedule"
         
     def join_channel( self, channel ):
+        logging.info( "[ + ] Joining channel" )
         try:
-            logging.info( "[ + ] Joining channel" )
-            self.slack_client.channels_join( name = channel )
+            self.client.channels_join( name = channel )
         except:
             logging.error( "[ - ] Error joining channel: {}".format( channel ) )
             
     def send_message( self, msg ):
+        logging.info( "[ + ] Sending message" )
         try:
-            logging.info( "[ + ] Sending message" )
-            self.slack_client.chat_postMessage( channel = self.channel, text = msg )
+            self.client.chat_postMessage( channel = self.channel, text = msg )
         except:
             logging.error( "[ - ] Error sending message: {}".format( msg ) )
+
+    
+    def run( self ):
+        self.join_channel( self.channel )
+
+
+    '''
+    @RTMClient.run_on( event = "message" )
+    def say_hello( **payload ):
+        data = payload[ "data" ]
+        if "hello" in data[ "text" ]:
+            self.send_message( self, "RTM: Hello" )
+    '''
+
             
-    def parse_command( self, cmd ):
+    '''
+    def rtm_worker( self ):
+        logging.info( "[ + ] Starting Slack RTM worker" )
         try:
-            logging.info( "[ + ] Parsing command" )
-            # parse
-        except:
-            logging.error( "[ - ] Error parsing command: {}".format( cmd ) )
+            self.client.rtm_connect()
+            while True:
+                try:
+                    events = self.client.rtm_read()
+                except:
+                    loggin.error( "[ - ] Could not read RTM events" )
+                    
+                    if len( events ):
+                        logging.info( "[ + ] New RTM event!" )
+
+                        for e in events:
+                            logging.debug( "[ + ] Event: {}".format( e ) )
+                        
+                sleep( 1 )
+        except e:
+            logging.error( "[ - ] Failed starting RTM session: {}".format( e ) )
+    '''
+    
+    '''
+    def run( self ):
+        self.join_channel( self.channel )
+        t = Thread( target = self.rtm_worker )
+        t.start()
+        sleep( 1 )
+        return t
+    '''
+    
             
 class BandeirasTime:
 
     def __init__( self ):
-        logging.info( "[ + ] Starting SlackBot instance..." )
+        logging.info( "[ + ] Creating BandeirasTime instance..." )
         self.slack_bot = SlackBot()
         self.queue = queue.Queue()
         self.events = list()
@@ -72,7 +112,6 @@ class BandeirasTime:
             logging.info( "[ + ] Adding event \"{}\" to queue.".format( e[ "title" ] ) )
             self.queue.put( ( eid, time ) )
             
-            
             self.slack_bot.send_message( "Added event \"{}\" to queue. (Starting in {:0>8})".format(
                 e[ "title" ],
                 str( self.seconds_timestamp( time - self.now()  ) )
@@ -86,41 +125,6 @@ class BandeirasTime:
         return self.request( params )
 
     
-    def reminder( self ):
-        logging.info( "[ + ] Starting reminder worker thread..." )
-        t = Thread( target = self.reminder_worker )
-        t.start()
-        return t
-
-    
-    def reminder_worker( self ):
-        q = self.queue
-
-        self.slack_bot.join_channel( "#schedule" )
-        
-        while not q.empty():
-            e = q.get()
-            eid = e[0]
-            start = e[1]
-            now = int( datetime.now().timestamp() )
-            sleep_time = start - now
-            
-            '''
-            msg = "Event \"{}\" starts in {:0>8}. Reminder in {} seconds.".format(
-                self._events[ eid ][ "title" ],
-                str( timedelta( seconds = sleep_time ) ),
-                sleep_time )
-            self.slack_bot.send_message( msg )
-            '''
-            
-            sleep( sleep_time ) # handle interrupts
-            self.alert( eid )
-
-        logging.info( "[ + ] Queue empty. Restarting worker..." )
-        self.init_queue()
-        self.reminder_worker()
-
-        
     def alert( self, eid ):        
         self.slack_bot.send_message( "Event \"{}\" starting. (Weight: {})\nGood Luck! 🚩".format(
             self._events[ eid ][ "title" ],
@@ -132,8 +136,8 @@ class BandeirasTime:
         url = "https://ctftime.org/api/v1/events/"
         headers = { "User-Agent" : "BandeirasTime v1" }
         
+        logging.info( "[ + ] Getting events from CTF Time API..." )
         try:
-            logging.info( "[ + ] Getting events from CTF Time API..." )
             r = get( url, params = params, headers = headers )
         except:
             logging.error( "[ - ] Error getting events from CTF Time API" )
@@ -174,9 +178,43 @@ class BandeirasTime:
                 print( line )
                 
         self.slack_bot.send_message( msg )
-        
+
+    
+    def reminder_worker( self ):
+        logging.info( "[ + ] Starting Reminder worker" )
+
+        q = self.queue        
+        while not q.empty():
+            e = q.get()
+            eid = e[0]
+            start = e[1]
+            now = int( datetime.now().timestamp() )
+            sleep_time = start - now
+            
+            '''
+            msg = "Event \"{}\" starts in {:0>8}. Reminder in {} seconds.".format(
+                self._events[ eid ][ "title" ],
+                str( timedelta( seconds = sleep_time ) ),
+                sleep_time )
+            self.slack_bot.send_message( msg )
+            '''
+            
+            sleep( sleep_time ) # handle interrupts
+            self.alert( eid )
+
+        logging.info( "[ + ] Queue empty. Restarting worker..." )
+        self.init_queue()
+        self.reminder_worker()
 
         
+    def reminder( self ):
+        t = Thread( target = self.reminder_worker )
+        t.start()
+        sleep( 1 )
+        return t
+    
+   
+           
 
 def main():
     logging.basicConfig(
@@ -185,14 +223,12 @@ def main():
         handlers = [ logging.StreamHandler() ]
     )
     
-    logging.info( "[ + ] Starting BandeirasTime..." )
-    
     bandeiras = BandeirasTime()
-    bandeiras.init_queue()
+    bandeiras.slack_bot.run()
     t = bandeiras.reminder()
 
     # do something meanwhile
-    
+
     t.join()
 
 if __name__ == "__main__":
