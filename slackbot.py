@@ -12,44 +12,72 @@ from bandeiras import BandeirasTime
 client = WebClient( token = environ[ "SLACK_BOT_TOKEN" ] )
 events = SlackEventAdapter( environ[ "SLACK_SIGNING_SECRET" ], "/slack/events" )
 
+
 main_channel = "#schedule"
 bandeiras = BandeirasTime( client, main_channel )
 
 cmd_prefix = "!ctf"
 
+help_menu = [ "help - Show available commands",
+              "subscribe - Receive notifications of events",
+              "events - Get detailed list of events"
+              "addevent id_1 id_2 ... id_n - Add event(s) to schedule" ]
 
-def handle_command( cmd ):
-    lst = cmd.split(" ")
-    if lst[1] == "events":
-        msg = bandeiras.events_str()
-        client.chat_postMessage( channel = main_channel, text = msg )
+
+
+# TODO
+def handle_command( payload ):
+    
+    try:
+        event = payload.get( "event", {} )
+        cmd = event.get( "text" ).split(" ")
+        action = cmd[1]
+        
+        if action == "help":
+            msg = ""
+            for h in help_menu:
+                msg += cmd_prefix + " " + h
+            client.chat_postMessage( channel = main_channel, text = msg )
+
+        elif action == "subscribe":
+            msg = "Successfully subscribed to CTF events reminder!"
+            client.chat_postMessage( channel = event.get( "user" ), text = msg ) 
+            
+        elif action == "events":
+            msg = bandeiras.events_str()
+            client.chat_postMessage( channel = event.get( "channel" ), text = msg )
+
+        elif action == "addevent":
+            _ = 1
+            
+        else:
+            _ = 1
+            
+    except:
+        logging.error( "[ - ] Error handling command: {}".format( cmd ) )
         
 
 
 @events.on( "message" )
 def message( payload ):
-    event = payload.get( "event", {} )
-    channel_id = event.get( "channel" )
-    user_id = event.get( "user" )
-    text = event.get( "text" )
+    logging.info( "[ + ] New event received: {}".format( payload ) )
     
+    text = payload.get( "event", {} ).get( "text" )
     if text and text[ : len( cmd_prefix ) ] == cmd_prefix:
-        handle_command( text )
-        # client.chat_postMessage( channel = channel_id, text = "PONG" )
+        handle_command( payload )
         
-    
 
 def main():
     
     logging.basicConfig(
-        level = logging.INFO,
         format = "%(asctime)s [%(levelname)s] %(message)s",
-        handlers = [ logging.StreamHandler() ]
+        handlers = [ logging.StreamHandler() ],
+        level = logging.DEBUG
     )
     
     
     t1 = Thread( target = bandeiras.reminder_worker )
-    t2 = Thread( target = events.start, args = ( '127.0.0.1' , 3000 , False, ) )
+    t2 = Thread( target = events.start, args = ( '0.0.0.0' , 3000 , False, ) )
 
     t1.start()
     t2.start()
@@ -61,47 +89,3 @@ if __name__ == "__main__":
     main()
 
 
-    
-
-
-
-
-
-
-
-
-    
-
-'''
-class SlackBot:
-
-    def __init__( self ):
-        logging.info( "[ + ] Creating SlackBot instance..." )
-        self.channel = "#schedule"
-        try:
-            token = environ[ "SLACK_BOT_TOKEN" ]
-            self.client = WebClient( token = token )
-        except:
-            logging.error( "[ - ] Error starting SlackBot instance" )
-            
-        
-    def join_channel( self, channel ):
-        logging.info( "[ + ] Joining channel" )
-        try:
-            self.client.channels_join( name = channel )
-        except:
-            logging.error( "[ - ] Error joining channel: {}".format( channel ) )
-            
-    def send_message( self, msg ):
-        logging.info( "[ + ] Sending message" )
-        try:
-            self.client.chat_postMessage( channel = self.channel, text = msg )
-        except:
-            logging.error( "[ - ] Error sending message: {}".format( msg ) )
-
-                  
-    def run( self ):
-        self.join_channel( self.channel )
-'''
-
-        
