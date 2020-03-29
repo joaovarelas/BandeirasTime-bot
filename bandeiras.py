@@ -10,20 +10,27 @@ from requests import get
 from datetime import datetime, timedelta
 
 
-
 class BandeirasTime:
 
     def __init__( self, slack_client, main_channel ):
+        logging.basicConfig(
+            format = "%(asctime)s [%(levelname)s] %(message)s",
+            handlers = [ logging.StreamHandler() ],
+            level = logging.INFO
+        )
+        
         logging.info( "[ + ] Creating BandeirasTime instance..." )
         
         self.slack_client = slack_client
         self.main_channel = main_channel
+        
         self.subscribers = set()
-
-        self.queue = queue.Queue()
+        self.schedule = set()
         self.events = dict()
 
         self.delta = 1 * 60 * 60 # 1 hour span
+        self.update_freq = 30 # check for new events each 30 secs
+
         
         
     def request( self, params ):
@@ -40,20 +47,30 @@ class BandeirasTime:
         return data
 
     def get_events( self, days_prev = 0, days_next = 10, limit = 5 ):
-        params = { "start" : self.unixtime( days_prev ),
-                   "finish" : self.unixtime( days_next ),
+
+        self.events.clear()
+        
+        params = { "start" : self.unix_time( days_prev ),
+                   "finish" : self.unix_time( days_next ),
                    "limit" : limit }
 
-        events = dict()
         
         json_data = self.request( params )
         for line in json_data:
-            events[ line[ "id" ] ] = line
-            
-        return events
+            self.events[ line[ "id" ] ] = line
+
+        return
+
+    # temporary fix
+    def get_weight( self, url ):
+        headers = { "User-Agent" : "BandeirasTime v1" }
+        r = get( url, headers = headers )
+        html = r.text
+        rating = html.split("Rating weight: ")[1].split("&")[0]
+        return rating
+        
     
-    
-    def unixtime( self, days = 0 ):
+    def unix_time( self, days = 0 ):
         delta = timedelta( days = days )
         time = datetime.now()
         time += delta if days >= 0 else -delta
@@ -70,92 +87,84 @@ class BandeirasTime:
         return timedelta( seconds = secs )
 
     def now( self ):
-        return self.unixtime()
+        return self.unix_time()
 
         
-    def events_str( self ):
-        keys = [ "title", "start", "finish", "weight", "location",
-                 "url", "ctf_id", "ctftime_url",  "id"]
+    def print_events( self ):
+        self.get_events()
+        
         msg = ""
-        for e in self.events:
-            msg += "\n"
-            print("")
-            for k in keys:
-                line = "%s: %s\n" % ( k, e[ k ] )
-                msg += line
-                print( line )
-        return msg
-    
-
-    def init_queue( self ):
-        logging.info( "[ + ] Resetting queue & events" )
-        self.queue.queue.clear()
-
-        self.events = self.get_events()
-        overlap = dict()        
-        
         for k in self.events.keys():
-            eid = int( self.events[ k ][ "id" ] )
-            time = self.date_time( self.events[ k ][ "start" ] )
-
-            # prevent event overlap
-            while time in overlap.keys():
-                time += 30 # 30 secs ahead 
-                overlap[ time ] = True
-
-                
-            logging.info( "[ + ] Adding event \"{}\" to queue.".format(
-                self.events[ k ][ "title" ] )
+            e = self.events[ k ]
+            line = "ID: {} | {} | Weight: {} | Starts in: {:0>8}  | URL: {}\n".format(
+                e[ "id" ],
+                e[ "title" ],
+                self.get_weight( e[ "ctftime_url" ] ),
+                str( timedelta( seconds = self.date_time( e[ "start" ] ) - self.now() ) ),
+                #e[ "weight" ],
+                e[ "url" ]
             )
-            # add to queue
-            self.queue.put( ( eid, time ) )
-            
-            msg = "Added event \"{}\" to queue. (Starting in {:0>8})".format(
-                self.events[ k ][ "title" ],
-                str( self.seconds_timestamp( time - self.now() ) )
-            )
-            #self.slack_client.chat_postMessage( channel = self.main_channel, text = msg )
-            
+            msg += line
+        return msg
 
-            
+    
+    def add_event( self, eid ):
+        logging.info( "[ + ] Adding event to schedule" )
+        eid = int( eid )
+        start = self.date_time( self.events[ eid ][ "start" ] )
+        self.schedule.add( ( start, eid ) )
+        return
+
+    def del_event( self, eid ):
+        logging.info( "[ + ] Deleting event from schedule" )
+        eid = int( eid )
+        start = self.date_time( self.events[ eid ][ "start" ] )
+        self.schedule.remove( ( start, eid ) )
+        return
+
     def reminder_worker( self ):
         logging.info( "[ + ] Starting Reminder worker" )
-
-        self.init_queue()
-        q = self.queue
         
-        while not q.empty():
-            e = q.get()
-            eid = e[0]
-            start = e[1]
+        while True:
 
-            # sleep until 1 hour left
-            if start - self.now()  > self.delta:
-                sleep( start - self.delta - self.now() )
+            if not self.schedule:
+                logging.info( "[ + ] Empty schedule. Sleeping..." )
+                sleep( self.update_freq )
+                continue
+
+            logging.info( "[ + ] Schedule is not empty" )
+            for e in self.schedule:
+                start = e[0]
+                eid = e[1]
+
+                # event started
+                if self.now() >= start:
+                    self.alert( eid )
+                    self.schedule.remove( ( start, eid ) )
+                    continue
+
+                # 1 hour remaining
+                if start - self.now() <= self.delta:
+                    msg = "Event \"{}\" (Weight: {}) starting in {:0>8}.".format(
+                        self.events[ eid ][ "title" ],
+                        #self.events[ eid ][ "weight" ],
+                        self.get_weight( e[ "ctftime_url" ] ),
+                        str( timedelta( seconds = start - self.now() ) )
+                    )    
+                    self.slack_client.chat_postMessage( channel = self.main_channel, text = msg )
+                    continue
                 
-            # 1 hour before reminder
-            msg = "Event \"{}\" (Weight: {}) starting in {:0>8}.".format(
-                self.events[ eid ][ "title" ],
-                self.events[ eid ][ "weight" ],
-                str( timedelta( seconds = start - self.now() ) )
-            )    
-            #self.slack_client.chat_postMessage( channel = self.main_channel, text = msg )
-
-            # sleep until event starts
-            sleep( start - self.now() )
-
-            # event started, send alert
-            self.alert( eid )
-
-            
-        logging.info( "[ + ] Queue empty. Restarting worker..." )
-        self.reminder_worker()
-
+            logging.info( "[ + ] Checking schedule again. Sleeping..." )   
+            sleep( self.update_freq )
+        return
+    
 
     def alert( self, eid ):
         msg = "Event \"{}\" starting. (Weight: {})\nGood Luck! 🚩".format(
             self.events[ eid ][ "title" ],
-            self.events[ eid ][ "weight" ]
+            self.get_weight( e[ "ctftime_url" ] )
+            #self.events[ eid ][ "weight" ]
         ) 
         self.slack_client.chat_postMessage( channel = self.main_channel, text = msg )
-        
+        return
+    
