@@ -56,7 +56,8 @@ def handle_command( payload ):
             client.chat_postMessage( channel = event.get( "channel" ), text = msg )
             return
         
-        msg = "There are {} events scheduled:".format( len( bandeiras.schedule ) )
+        msg = "There are {} events scheduled:\n".format( len( bandeiras.schedule ) )
+        msg += bandeiras.print_schedule( )
         client.chat_postMessage( channel = event.get( "channel" ), text = msg )
         
     elif action == "addevent":
