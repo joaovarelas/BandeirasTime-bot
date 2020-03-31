@@ -107,6 +107,16 @@ class BandeirasTime:
             msg += line
         return msg
 
+    def print_schedule( self ):
+       
+        msg = ""
+        for e in self.schedule:
+            msg += "Event {} starting in {:0>8}\n".format(
+                self.events[ e[ 1 ] ],
+                str( timedelta( seconds = self.date_time( e[ 1 ] ) - self.now() ) )
+            )
+        logging.info(" [ + ] DEBUG: schedule: {}\n".format( msg ) )
+        return msg
     
     def add_event( self, eid ):
         logging.info( "[ + ] Adding event to schedule" )
@@ -151,7 +161,7 @@ class BandeirasTime:
                     msg = "Event \"{}\" (Weight: {}) starting in {:0>8}.".format(
                         self.events[ eid ][ "title" ],
                         #self.events[ eid ][ "weight" ],
-                        self.get_weight( e[ "ctftime_url" ] ),
+                        self.get_weight( self.events[ e[ 1 ] ][ "ctftime_url" ] ),
                         str( timedelta( seconds = start - self.now() ) )
                     )    
                     self.slack_client.chat_postMessage( channel = self.main_channel, text = msg )
@@ -165,7 +175,7 @@ class BandeirasTime:
     def alert( self, eid ):
         msg = "Event \"{}\" starting. (Weight: {})\nGood Luck! 🚩".format(
             self.events[ eid ][ "title" ],
-            self.get_weight( e[ "ctftime_url" ] )
+            self.get_weight( self.events[ eid ][ "ctftime_url" ] )
             #self.events[ eid ][ "weight" ]
         ) 
         self.slack_client.chat_postMessage( channel = self.main_channel, text = msg )
