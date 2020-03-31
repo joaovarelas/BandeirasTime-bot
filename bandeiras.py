@@ -26,6 +26,7 @@ class BandeirasTime:
         
         self.subscribers = set()
         self.schedule = set()
+        self.one_hour = dict() # temp fix
         self.events = dict()
 
         self.delta = 1 * 60 * 60 # 1 hour span
@@ -123,6 +124,7 @@ class BandeirasTime:
         eid = int( eid )
         start = self.date_time( self.events[ eid ][ "start" ] )
         self.schedule.add( ( start, eid ) )
+        self.one_hour[ eid ] = False
         return
 
     def del_event( self, eid ):
@@ -130,6 +132,7 @@ class BandeirasTime:
         eid = int( eid )
         start = self.date_time( self.events[ eid ][ "start" ] )
         self.schedule.remove( ( start, eid ) )
+        self.one_hour.pop( eid )
         return
 
     def reminder_worker( self ):
@@ -153,17 +156,23 @@ class BandeirasTime:
                     self.alert( eid )
                     logging.info( "[ + ] Removing event {} from schedule".format( eid ) )
                     self.schedule.remove( ( start, eid ) )
+                    self.one_hour.pop( eid )
                     continue
 
                 # 1 hour remaining
                 if start - self.now() <= self.delta:
+                    if self.one_hour[ eid ]:
+                        continue
+                    
                     logging.info( "[ + ] 1 Hour remaining for event {}".format( eid ) )
                     msg = "Event \"{}\" (Weight: {}) starting in {:0>8}.".format(
                         self.events[ eid ][ "title" ],
                         #self.events[ eid ][ "weight" ],
                         self.get_weight( self.events[ e[ 1 ] ][ "ctftime_url" ] ),
                         str( timedelta( seconds = start - self.now() ) )
-                    )    
+                    )
+                    
+                    self.one_hour[ eid ] = True
                     self.slack_client.chat_postMessage( channel = self.main_channel, text = msg )
                     continue
                 
