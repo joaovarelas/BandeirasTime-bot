@@ -60,7 +60,7 @@ def handle_command( payload ):
         client.chat_postMessage( channel = event.get( "channel" ), text = msg )
         
     elif action == "addevent":
-        if len( cmd ) > 3:
+        if len( cmd ) > 2:
             ids = cmd[2:]
             for i in ids:
                 bandeiras.add_event( i )
@@ -69,7 +69,7 @@ def handle_command( payload ):
             client.chat_postMessage( channel = event.get( "channel" ), text = msg )
             
     elif action == "delevent":
-        if len( cmd ) > 3:
+        if len( cmd ) > 2:
             ids = cmd[2:]
             for i in ids:
                 bandeiras.del_event( i )

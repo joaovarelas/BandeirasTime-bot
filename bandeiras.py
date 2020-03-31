@@ -29,7 +29,7 @@ class BandeirasTime:
         self.events = dict()
 
         self.delta = 1 * 60 * 60 # 1 hour span
-        self.update_freq = 30 # check for new events each 30 secs
+        self.update_freq = 30 # 30 secs update
 
         
         
@@ -139,12 +139,15 @@ class BandeirasTime:
 
                 # event started
                 if self.now() >= start:
+                    logging.info( "[ + ] Starting event {}!".format( eid ) )
                     self.alert( eid )
+                    logging.info( "[ + ] Removing event {} from schedule".format( eid ) )
                     self.schedule.remove( ( start, eid ) )
                     continue
 
                 # 1 hour remaining
                 if start - self.now() <= self.delta:
+                    logging.info( "[ + ] 1 Hour remaining for event {}".format( eid ) )
                     msg = "Event \"{}\" (Weight: {}) starting in {:0>8}.".format(
                         self.events[ eid ][ "title" ],
                         #self.events[ eid ][ "weight" ],
