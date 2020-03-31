@@ -113,8 +113,8 @@ class BandeirasTime:
         msg = ""
         for e in self.schedule:
             msg += "Event {} starting in {:0>8}\n".format(
-                self.events[ e[ 1 ] ],
-                str( timedelta( seconds = self.date_time( e[ 1 ] ) - self.now() ) )
+                self.events[ e[ 1 ] ][ "title" ],
+                str( timedelta( seconds = e[ 0 ] - self.now() ) )
             )
         logging.info(" [ + ] DEBUG: schedule: {}\n".format( msg ) )
         return msg
