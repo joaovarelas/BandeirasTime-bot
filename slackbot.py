@@ -33,6 +33,8 @@ def handle_command( payload ):
     event = payload.get( "event", {} )
     cmd = event.get( "text" ).split(" ")
     action = cmd[1]
+
+    logging.info( "[ + ] Received action {}".format( action ) )
     
     if action == "help":
         msg = ""
