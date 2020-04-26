@@ -140,12 +140,18 @@ class BandeirasTime:
         
         while True:
 
+            #print(self.events)
+            print(self.schedule)
+            print(self.one_hour)
+            
             if not self.schedule:
                 logging.info( "[ + ] Empty schedule. Sleeping..." )
                 sleep( self.update_freq )
                 continue
 
-            logging.info( "[ + ] Schedule is not empty" )
+            tmp_schedule = self.schedule.copy()
+            
+            #logging.info( "[ + ] Schedule is not empty" )
             for e in self.schedule:
                 start = e[0]
                 eid = e[1]
@@ -155,7 +161,9 @@ class BandeirasTime:
                     logging.info( "[ + ] Starting event {}!".format( eid ) )
                     self.alert( eid )
                     logging.info( "[ + ] Removing event {} from schedule".format( eid ) )
-                    self.schedule.remove( ( start, eid ) )
+                    
+                    tmp_schedule.remove( (start, eid) ) # ghetto fix data race
+                    
                     self.one_hour.pop( eid )
                     continue
 
@@ -175,8 +183,9 @@ class BandeirasTime:
                     self.one_hour[ eid ] = True
                     self.slack_client.chat_postMessage( channel = self.main_channel, text = msg )
                     continue
-                
-            logging.info( "[ + ] Checking schedule again. Sleeping..." )   
+
+            self.schedule = tmp_schedule.copy()
+            #logging.info( "[ + ] Checking schedule again. Sleeping..." )   
             sleep( self.update_freq )
         return
     
